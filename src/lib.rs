@@ -1,8 +1,9 @@
-use std::io::Write;
+use std::num::NonZeroU32;
+use std::{io::Write, os::raw::c_short};
 use std::time::SystemTime;
 use sha2::{Digest, Sha256};
 use tokio::time::sleep;
-use widestring::WideCString;
+use widestring::{WideCString, U16Str, U16CStr};
 use std::time::Duration;
 
 use windows::{
@@ -103,18 +104,59 @@ pub async fn update_presence(rp: ActivityBuilder) {
 }
 
 #[no_mangle]
-pub extern "C" fn UpdateDiscordRPC(in_server_name: &widestring::WideCString, in_level_name: &widestring::WideCString, in_player_count: u32, in_max_players: u32, in_team_num: u32, in_time_elapsed: u32, in_time_remaining: u32, in_is_firestorm: u32, in_image_name: &widestring::WideCString) {
-    log(udk_log::LogType::Warning, &format!("UpdateDiscordRPC, {}, {}, {}, {}, {}, {}",  in_player_count, in_max_players, in_team_num, in_time_elapsed, in_time_remaining, in_is_firestorm));
+pub extern "C" fn UpdateDiscordRPC(in_server_name_ptr: *const u16, in_level_name_ptr: *const u16, in_player_count: u32, in_max_players: u32, in_team_num: u32, in_time_elapsed: u32, in_time_remaining: u32, is_firestorm: u32, in_image_name_ptr: *const u16) {
+    let in_server_name = unsafe { U16CStr::from_ptr_str(in_server_name_ptr) }.to_string_lossy();
+    let in_level_name = unsafe { U16CStr::from_ptr_str(in_level_name_ptr) }.to_string_lossy();
+    let in_image_name = unsafe { U16CStr::from_ptr_str(in_image_name_ptr) }.to_string_lossy();
+    log(udk_log::LogType::Warning, &format!("UpdateDiscordRPC, {}, {}, {}, {}, {}, {}, {}, {}, {}", in_server_name, in_level_name, in_player_count, in_max_players, in_team_num, in_time_elapsed, in_time_remaining, is_firestorm, in_image_name));
 
-    let rp = discord_sdk::activity::ActivityBuilder::default()
-    .details("Competitive".to_owned())
-    .state("Playing Solo".to_owned())
-    .assets(
-        discord_sdk::activity::Assets::default()
-            .large("map_ts-sanctuary".to_owned(), Some("Tiberian Sun - Sanctuary".to_owned()))
-            .small("tsgdi".to_owned(), Some("GDI".to_owned())),
-    )
-    .start_timestamp(SystemTime::now());
+
+    if in_level_name == "FrontEndMap" {
+        let mut assets = discord_sdk::activity::Assets::default();
+        if is_firestorm == 0 {
+            assets = assets.large("renegadex", Some("Renegade X".to_owned()));
+        } else {
+            assets = assets.large("fs", Some("Firestorm".to_owned()));
+        }
+
+        let rp = discord_sdk::activity::ActivityBuilder::default()
+        .details("Main Menu")
+        .state("")
+        .assets(assets);
+
+        get_runtime().spawn(update_presence(rp));
+        return;
+    }
+
+    let mut assets = discord_sdk::activity::Assets::default();
+    assets = assets.large(in_image_name, Some(in_level_name.clone()));
+
+    let team = match in_team_num {
+        0 => "GDI",
+        1 => "Nod",
+        2 => "BH",
+        _ => ""
+    };
+
+    if is_firestorm == 0 {
+        assets = assets.small(team.to_lowercase(), Some(team));
+    } else {
+        assets = assets.small(format!("ts{}", team.to_lowercase()), Some(team));
+    }
+
+    let mut rp = discord_sdk::activity::ActivityBuilder::default()
+    .details(in_server_name.clone())
+    .state(in_level_name)
+    .assets(assets)
+    .start_timestamp(SystemTime::now().checked_sub(Duration::from_secs(in_time_elapsed as u64)).unwrap());
+
+    if in_time_remaining != 0 {
+        rp = rp.end_timestamp(SystemTime::now().checked_add(Duration::from_secs(in_time_remaining as u64)).unwrap());
+    }
+
+    if in_server_name != "Skirmish" && in_player_count > 0 && in_max_players > 0 {
+        rp = rp.party(in_server_name, Some(NonZeroU32::new(in_player_count).unwrap()), Some(NonZeroU32::new(in_max_players).unwrap()), discord_sdk::activity::PartyPrivacy::Private);
+    }
 
     get_runtime().spawn(update_presence(rp));
 }
