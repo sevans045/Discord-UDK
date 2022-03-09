@@ -1,41 +1,24 @@
-use std::num::NonZeroU32;
-use std::{io::Write, os::raw::c_short};
-use std::time::SystemTime;
 use sha2::{Digest, Sha256};
-use tokio::time::sleep;
-use widestring::{WideCString, U16Str, U16CStr};
-use std::time::Duration;
 
 use windows::{
     Win32::{
         Foundation::{HANDLE, HINSTANCE},
         System::{
-            Diagnostics::Debug::OutputDebugStringW,
             LibraryLoader::GetModuleHandleA,
             ProcessStatus::{K32GetModuleFileNameExW, K32GetModuleInformation, MODULEINFO},
             SystemServices::{
-                DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
+                DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH
             },
             Threading::GetCurrentProcess,
         },
     },
-    core::HRESULT,
+    core::{Error, PWSTR},
 };
 
-
-use crate::udk_log::log;
-use tokio;
-use tracing;
-use anyhow;
-
-
-fn DllMain(_hinst_dll: HINSTANCE, fdw_reason: u32, _lpv_reserved: usize) -> i32 {
+pub fn dll_main(_hinst_dll: HINSTANCE, fdw_reason: u32, _lpv_reserved: usize) -> i32 {
     match fdw_reason {
         DLL_PROCESS_ATTACH => {
-            if let Err(e) = dll_attach() {
-                // Print a debug message for anyone who's listening.
-                eprintln!("{:?}", e);
-            }
+            dll_attach()
         }
         DLL_PROCESS_DETACH => {}
 
@@ -50,38 +33,32 @@ fn DllMain(_hinst_dll: HINSTANCE, fdw_reason: u32, _lpv_reserved: usize) -> i32 
 
 /// Called upon DLL attach. This function verifies the UDK and initializes
 /// hooks if the UDK matches our known hash.
-fn dll_attach() -> anyhow::Result<()> {
+fn dll_attach() {
     let process = unsafe { GetCurrentProcess() };
     let module = unsafe { GetModuleHandleA(None) };
 
-    let exe_slice = get_module_slice(
-        &get_module_information(process, module).expect("Failed to get module information for UDK"),
-    );
+    let exe_slice = get_module_slice(&get_module_information(process, module).expect("Failed to get module information for UDK"));
 
     // Now that we're attached, let's hash the UDK executable.
     // If the hash does not match what we think it should be, do not attach detours.
-    let exe_filename = get_module_filename(process, module)?;
+    let exe_filename = get_module_filename(process, module).unwrap();
 
-    let mut exe = std::fs::File::open(exe_filename)?;
+    let mut exe = std::fs::File::open(exe_filename).unwrap();
     let hash = {
         let mut sha = Sha256::new();
-        std::io::copy(&mut exe, &mut sha)?;
+        std::io::copy(&mut exe, &mut sha).unwrap();
         sha.finalize()
     };
 
     // Ensure the hash matches a known hash.
     if hash[..] != UDK_KNOWN_HASH {
-        output_debug_string(&format!("Hash: {:02X?}\n", hash));
-        output_debug_string(&format!("Expected: {:02X?}\n", UDK_KNOWN_HASH));
-        anyhow::bail!("Unknown UDK hash");
+        panic!("Unknown UDK hash");
     }
 
     // Cache the UDK slice.
     unsafe {
         UDK_SLICE = Some(exe_slice.as_ref().unwrap());
     }
-
-    Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -96,8 +73,6 @@ const UDK_KNOWN_HASH: [u8; 32] = [
     0x6C, 0x1E, 0x8F, 0x9E, 0xF0, 0x70, 0x40, 0xB8, 0xF9, 0x96, 0x73, 0x8A, 0x00, 0xFB, 0x90, 0x07,
 ];
 
-
-
 /// Cached slice of UDK.exe. This is only touched once upon init, and
 /// never written again.
 // FIXME: The slice is actually unsafe to access; sections of memory may be unmapped!
@@ -105,17 +80,10 @@ const UDK_KNOWN_HASH: [u8; 32] = [
 static mut UDK_SLICE: Option<&'static [u8]> = None;
 
 /// Return a slice of UDK.exe
+#[cfg(target_arch = "x86_64")]
 pub fn get_udk_slice() -> &'static [u8] {
     // SAFETY: This is only touched once in DllMain.
     unsafe { UDK_SLICE.unwrap() }
-}
-
-/// Wrapped version of the Win32 OutputDebugString.
-fn output_debug_string(s: &str) {
-    let mut wstr = widestring::U16String::from_str(s);
-    unsafe {
-        OutputDebugStringW(PWSTR(wstr.as_mut_ptr()));
-    }
 }
 
 /// Wrapped version of the Win32 GetModuleFileName.
@@ -161,5 +129,3 @@ fn get_module_information(process: HANDLE, module: HINSTANCE) -> windows::core::
 fn get_module_slice(info: &MODULEINFO) -> *const [u8] {
     core::ptr::slice_from_raw_parts(info.lpBaseOfDll as *const u8, info.SizeOfImage as usize)
 }
-
-

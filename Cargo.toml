@@ -9,11 +9,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 discord-sdk = "0.3.0"
-anyhow = "1.0.51"
-com = "0.6.0"
-detour = { git = "https://github.com/darfink/detour-rs.git" }
-lazy_static = "1.4.0"
-libloading = "0.7.2"
 sha2 = "0.10.0"
 widestring = "0.5.1"
 tokio = { version = "1.8.2", features = ["full"] }
@@ -30,3 +25,7 @@ features = [
   "Win32_System_LibraryLoader",
   "Win32_System_Diagnostics_Debug"
   ]
+
+[profile.release]
+opt-level = 'z'
+lto = true
