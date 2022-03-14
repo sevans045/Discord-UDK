@@ -5,12 +5,17 @@ mod discord;
 mod dll;
 mod error;
 
+static mut INITIALIZED_BIND : bool = false;
+
 #[no_mangle]
 pub extern "C" fn DLLBindInit(_in_init_data: FDLLBindInitData) {
-    tracing_subscriber::fmt()
-    .compact()
-    .with_max_level(tracing::Level::TRACE)
-    .init();
+    if unsafe { !INITIALIZED_BIND } {
+        tracing_subscriber::fmt()
+            .pretty()
+            .with_max_level(tracing::Level::WARN)
+            .init();
+        unsafe { INITIALIZED_BIND = true };
+    }
 }
 
 #[repr(C)]
