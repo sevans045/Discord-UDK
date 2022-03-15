@@ -2,7 +2,8 @@
 pub enum Error {
   DiscordError(String),
   TokioReceiveError(String),
-  TokioTimeoutError(String)
+  TokioTimeoutError(String),
+  IoError(std::io::Error)
 }
 
 impl std::error::Error for Error { }
@@ -28,5 +29,13 @@ impl From<tokio::time::error::Elapsed> for Error {
   #[inline(always)]
   fn from(error: tokio::time::error::Elapsed) -> Self {
     Self::TokioTimeoutError(format!("{:?}", error))
+  }
+}
+
+impl From<std::io::Error> for Error {
+  #[track_caller]
+  #[inline(always)]
+  fn from(error: std::io::Error) -> Self {
+    Self::IoError(error)
   }
 }

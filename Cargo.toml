@@ -28,4 +28,6 @@ features = [
 
 [profile.release]
 opt-level = 'z'
+strip = true
 lto = true
+codegen-units = 1

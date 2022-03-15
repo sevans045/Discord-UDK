@@ -24,8 +24,17 @@ pub async fn make_client(subs: discord_sdk::Subscriptions) -> Result<Client, Err
     }));
 
     let mut user = wheel.user();
+    let current_exe = std::env::current_exe()?;
 
-    let discord = discord_sdk::Discord::new(discord_sdk::DiscordApp::PlainId(APP_ID), subs, Box::new(handler)).expect("unable to create discord client");
+    let application = discord_sdk::registration::Application {
+        id: APP_ID,
+        name: Some("Renegade X".to_string()),
+        command: discord_sdk::registration::LaunchCommand::Bin {
+            path: current_exe,
+            args: vec![]
+        }
+    };
+    let discord = discord_sdk::Discord::new(discord_sdk::DiscordApp::Register(application), subs, Box::new(handler)).expect("unable to create discord client");
     tracing::info!("waiting for handshake...");
     let timed_out = timeout(Duration::from_millis(1500), user.0.changed()).await;
 
@@ -90,13 +99,15 @@ pub fn get_runtime() -> &'static mut tokio::runtime::Runtime {
 }
 
 pub async fn update_presence(in_server_name: String, in_level_name: String, in_player_count: u32, in_max_players: u32, team: String, in_time_elapsed:u32, in_time_remaining: u32, is_firestorm: bool, in_image_name: String) -> Result<(), Error> {
-    if unsafe { !IS_INITIALIZED } {
+    if unsafe { !IS_INITIALIZED && CLIENT.is_none() } {
         tracing::warn!("initializing tokio and discord");
         start_discord_rpc().await?;
+        tracing::warn!("Initialized discord RPC");
+    } else if unsafe { !IS_INITIALIZED && CLIENT.is_some() } {
+        tracing::error!("Client exists, yet we're not initialized yet!");
+        return Err(Error::DiscordError("Client exists, yet we're not initialized yet!".to_string()))
     }
-    tracing::warn!("IS_INITIALIZED && RUNTIME.is_some()");
 
-    
     if in_level_name == "FrontEndMap" {
         let mut assets = discord_sdk::activity::Assets::default();
         if !is_firestorm {
@@ -148,7 +159,7 @@ pub async fn update_presence(in_server_name: String, in_level_name: String, in_p
 #[no_mangle]
 pub extern "C" fn UpdateDiscordRPC(in_server_name_ptr: *const u16, in_level_name_ptr: *const u16, in_player_count: u32, in_max_players: u32, in_team_num: u32, in_time_elapsed: u32, in_time_remaining: u32, is_firestorm: u32, in_image_name_ptr: *const u16) {
     if unsafe { !IS_INITIALIZED && RUNTIME.is_some() } {
-        tracing::warn!("Exiting UpdateDiscordRPC");
+        tracing::warn!("Exiting UpdateDiscordRPC as we're not initialized yet!");
         return;
     } else if unsafe { RUNTIME.is_none() } {
         unsafe { RUNTIME = Some(tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap()) };
