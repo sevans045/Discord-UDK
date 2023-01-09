@@ -12,7 +12,7 @@ use windows::{
             Threading::GetCurrentProcess,
         },
     },
-    core::{Error, PWSTR},
+    core::Error,
 };
 
 pub fn dll_main(_hinst_dll: HINSTANCE, fdw_reason: u32, _lpv_reserved: usize) -> i32 {
@@ -35,7 +35,7 @@ pub fn dll_main(_hinst_dll: HINSTANCE, fdw_reason: u32, _lpv_reserved: usize) ->
 /// hooks if the UDK matches our known hash.
 fn dll_attach() {
     let process = unsafe { GetCurrentProcess() };
-    let module = unsafe { GetModuleHandleA(None) };
+    let module = unsafe { GetModuleHandleA(None) }.expect("Couldn't get Module Handle for the UDK process");
 
     let exe_slice = get_module_slice(&get_module_information(process, module).expect("Failed to get module information for UDK"));
 
@@ -93,7 +93,7 @@ fn get_module_filename(process: HANDLE, module: HINSTANCE) -> windows::core::Res
     let mut buf = [0u16; 256];
 
     let len = unsafe {
-        K32GetModuleFileNameExW(process, module, PWSTR(buf.as_mut_ptr()), buf.len() as u32)
+        K32GetModuleFileNameExW(process, module, &mut buf)
     } as usize;
 
     if len == 0 {
