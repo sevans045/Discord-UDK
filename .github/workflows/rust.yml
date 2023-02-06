@@ -1,0 +1,28 @@
+name: Windows Release Build
+
+on:
+  push:
+    branches: [ "master" ]
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [x86_64, i686]
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - run: cargo install cross
+    
+    - name: Build
+      run: cross build --verbose --release --target=${{ matrix.platform }}-pc-windows-gnu
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: Discord (${{ matrix.platform }})
+        path: target/${{ matrix.platform }}-pc-windows-gnu/release/discord.dll
