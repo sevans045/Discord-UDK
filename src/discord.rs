@@ -20,7 +20,8 @@ pub struct Client {
 
 pub async fn make_client(subs: discord_sdk::Subscriptions) -> Result<Client, Error> {
     let (wheel, handler) = discord_sdk::wheel::Wheel::new(Box::new(|err| {
-        tracing::error!(error = ?err, "encountered an error");
+        tracing::error!(error = ?err, "encountered an error while trying to create a discord connection");
+        log(crate::udk_log::LogType::Warning, "encountered an error while trying to create a discord connection");
     }));
 
     let mut user = wheel.user();
@@ -34,38 +35,45 @@ pub async fn make_client(subs: discord_sdk::Subscriptions) -> Result<Client, Err
             args: vec![]
         }
     };
-    let discord = discord_sdk::Discord::new(discord_sdk::DiscordApp::Register(application), subs, Box::new(handler)).expect("unable to create discord client");
-    tracing::info!("waiting for handshake...");
-    let timed_out = timeout(Duration::from_millis(1500), user.0.changed()).await;
+    let new_discord_result = discord_sdk::Discord::new(discord_sdk::DiscordApp::Register(application), subs, Box::new(handler));
+    if let Ok(discord) = new_discord_result {
+        tracing::info!("waiting for handshake...");
+        let timed_out = timeout(Duration::from_millis(1500), user.0.changed()).await;
 
-    if let Err(error) = timed_out {
-        tracing::warn!("Failed to connect, shutting down discord!");
-        discord.disconnect().await;
-        return Err(Error::DiscordError(format!("{:?}", error)))
+        if let Err(error) = timed_out {
+            tracing::warn!("Failed to connect, shutting down discord!");
+            log(crate::udk_log::LogType::Warning, "Failed to connect, shutting down discord!");
+            discord.disconnect().await;
+            return Err(Error::DiscordError(format!("{:?}", error)))
+        } else {
+            timed_out??;
+        }
+
+        let user = match &*user.0.borrow() {
+            discord_sdk::wheel::UserState::Connected(user) => Ok(user.clone()),
+            discord_sdk::wheel::UserState::Disconnected(error) => Err(format!("{:?}", error))
+        };
+
+        if let Err(error) = user {
+            tracing::warn!("Failed to connect, shutting down discord!");
+            log(crate::udk_log::LogType::Warning, &format!("Failed to connect, shutting down discord! Error: {}", error));
+            discord.disconnect().await;
+            return Err(Error::DiscordError(error))
+        } else if let Ok(user) = user {
+            unsafe { IS_INITIALIZED = true };
+            tracing::info!("connected to Discord, local user is {:#?}", user);
+            log(crate::udk_log::LogType::Warning, &format!("connected to Discord, local user is {:#?}", user));
+
+            return Ok(Client {
+                discord,
+                user: user.clone(),
+                wheel,
+            });
+        } else {
+            return Err(Error::DiscordError(format!("Could not connect to discord, failed to retrieve current discord user")));
+        }
     } else {
-        timed_out??;
-    }
-
-    let user = match &*user.0.borrow() {
-        discord_sdk::wheel::UserState::Connected(user) => Ok(user.clone()),
-        discord_sdk::wheel::UserState::Disconnected(error) => Err(format!("{:?}", error))
-    };
-
-    if let Err(error) = user {
-        tracing::warn!("Failed to connect, shutting down discord!");
-        discord.disconnect().await;
-        return Err(Error::DiscordError(error))
-    } else if let Ok(user) = user {
-        unsafe { IS_INITIALIZED = true };
-        tracing::info!("connected to Discord, local user is {:#?}", user);
-    
-        return Ok(Client {
-            discord,
-            user: user.clone(),
-            wheel,
-        });
-    } else {
-        panic!("This can never happen");
+        return Err(Error::DiscordError(format!("Could not create discord client")));
     }
 }
 
@@ -121,9 +129,10 @@ pub async fn update_presence(in_server_name: String, in_level_name: String, in_p
         .state("")
         .assets(assets);
 
-        log(crate::udk_log::LogType::Warning, "updated activity");
         let client = get_discord_client();
-        tracing::info!("updated activity: {:?}",client.discord.update_activity(rp).await);
+        let info = client.discord.update_activity(rp).await;
+        log(crate::udk_log::LogType::Warning, &format!("updated activity: {:?}", &info));
+        tracing::info!("updated activity: {:?}", &info);
         return Ok(());
     }
 
@@ -150,9 +159,10 @@ pub async fn update_presence(in_server_name: String, in_level_name: String, in_p
         rp = rp.party(in_server_name, Some(NonZeroU32::new(in_player_count).unwrap()), Some(NonZeroU32::new(in_max_players).unwrap()), discord_sdk::activity::PartyPrivacy::Private);
     }
 
-    log(crate::udk_log::LogType::Warning, "updated activity");
     let client = get_discord_client();
-    tracing::info!("updated activity: {:?}",client.discord.update_activity(rp).await);
+    let info = client.discord.update_activity(rp).await;
+    log(crate::udk_log::LogType::Warning, &format!("updated activity: {:?}", &info));
+    tracing::info!("updated activity: {:?}", &info);
     Ok(())
 }
 
