@@ -119,9 +119,9 @@ pub async fn update_presence(in_server_name: String, in_level_name: String, in_p
     if in_level_name == "FrontEndMap" {
         let mut assets = discord_sdk::activity::Assets::default();
         if !is_firestorm {
-            assets = assets.large("renegadex", Some("Renegade X".to_owned()));
+            assets = assets.large("game_icon", Some("Renegade X".to_owned()));
         } else {
-            assets = assets.large("fs", Some("Firestorm".to_owned()));
+            assets = assets.large("game_icon", Some("Firestorm".to_owned()));
         }
 
         let rp = discord_sdk::activity::ActivityBuilder::default()
