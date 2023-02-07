@@ -10,7 +10,7 @@ use discord_sdk;
 use tokio;
 use tracing;
 
-pub const APP_ID: discord_sdk::AppId = 846947824888709160;
+pub const APP_ID: discord_sdk::AppId = 1072347236849172570;
 
 pub struct Client {
     pub discord: discord_sdk::Discord,
@@ -29,7 +29,7 @@ pub async fn make_client(subs: discord_sdk::Subscriptions) -> Result<Client, Err
 
     let application = discord_sdk::registration::Application {
         id: APP_ID,
-        name: Some("Renegade X".to_string()),
+        name: Some("Firestorm".to_string()),
         command: discord_sdk::registration::LaunchCommand::Bin {
             path: current_exe,
             args: vec![]
@@ -139,11 +139,9 @@ pub async fn update_presence(in_server_name: String, in_level_name: String, in_p
     let mut assets = discord_sdk::activity::Assets::default();
     assets = assets.large(in_image_name, Some(in_level_name.clone()));
 
-    if !is_firestorm {
-        assets = assets.small(team.to_lowercase(), Some(team));
-    } else {
-        assets = assets.small(format!("ts{}", team.to_lowercase()), Some(team));
-    }
+    let mut team_icon: String = "team".to_owned();
+    team_icon.push_str(team);
+    assets = assets.small(team_icon), Some(team_icon));
 
     let mut rp = discord_sdk::activity::ActivityBuilder::default()
     .details(in_server_name.clone())
